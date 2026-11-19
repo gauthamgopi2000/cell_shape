@@ -21,16 +21,25 @@
 using std::iota;
 using std::vector;
 
-int main()
+int main(int argc, char *argv[])
 {
+
+	if (argc < 8)
+	{
+		fprintf(stderr, "Usage: %s KA KB Kp B Nt F0 tau \n", argv[0]);
+		exit(1);
+	}
+
 	FILE *otptfl1;
 	char dongdir[300], outfile1[300], restartfile[300];
 
 	// DP PARAMETERS
 	int Na = 50;  // Number of Dps
-	int Nss = 20; // Number of vertices
-	double delta = 1.;
-	int Alf_int = 170;
+	int Nss = 50; // Number of vertices
+	double delta = 1.1;
+	int Alf_int = 100;
+	double l0 = 1.;
+	double d0 = delta*l0;
 	double kal_A = double(Alf_int) / 100.;
 	double KAA_a_ratio = .01;
 	double a_cut_c = 1.;
@@ -49,13 +58,15 @@ int main()
 	double Alf_s = (double)Nss / PI * std::tan(PI / (double)Nss);
 
 	// SPRING CONSTANTS
-	double KA = 1000000.0;
-	double KAA = 100000.;
+	double KA = (double)atof(argv[1]);
+	double KAA = 1000.;
 	double KAA_a;
 	double Kw = KAA / 4.0;
-	double Kb = 10.;
-	int bending_added = 0;		 // is there bending force
-	double Kp = 2000.; // 1   perimeter spring
+	double Kb = (double)atof(argv[2]);
+	int bending_added = 1; // is there bending force
+	int bending_type = 2;
+	double Kp = (double)atof(argv[3]); // 1   perimeter spring
+	vector<double> Kl(Na, Kp);
 	KAA_a = KAA_a_ratio * KAA;
 
 	sprintf(dongdir, "./");
@@ -63,22 +74,22 @@ int main()
 	// PLASTICITY
 
 	int perimeter_plasticity_flag = 0; // should the perimeter be plastic or not
-	int whole_dp_plasticity = 0;
+	int whole_dp_plasticity = 1;
 	int area_plasticity_flag = 0;
-	int area_plasticity_all = 1; // is area plasticity on all 
-	double drag_l = 5.;			 // drag on perimeter plasticity
+	int area_plasticity_all = 1; // is area plasticity on all
+	double drag_l = (double)atof(argv[8]);			 // drag on perimeter plasticity
 	double l0min = 0.75;		 // lower bound on l0
 	double drag_a = 10000.;		 // drag on area plasticity
 	double l0max = 1.5;			 // upper bound on l0
 
 	// OTHER SIMULATION PARAMETERS
 	int resume_simulation = 1; // whether to resume a simulation from a restart file
-	int dstep = 10000;		   // how often to output coords
+	int dstep = 100000;		   // how often to output coords
 	int restartstep = 500000;  // how ofter to output restart files
 	int global_step = 2000;
-	double B = 1.2;		// drag
-	double Ti = 0.0;		// temperature
-	int temperature_on = 0; // should temperature be on
+	double B = (double)atof(argv[4]); // drag
+	double Ti = 0.0;				  // temperature
+	int temperature_on = 0;			  // should temperature be on
 	double T = Ti;
 	int param_override = 1; // whether these input parameters should override those from
 	vector<int> inflate_ids{};
@@ -86,23 +97,26 @@ int main()
 	vector<int> deflation_ids = {};
 	int n_deflate = deflation_ids.size();
 	double kA0 = -1.0e-3;
-	double box_length = 70.;
+	double box_length;
 	double phi_crit = 0.62;
-	double dt_verlet = 0.001;
+	double dt_verlet = 0.01;
 	double dt_fire = 0.001;
-	int Nt_verlet = 40000000;
+	int Nt_verlet = (int)atoi(argv[5]);
 	int Nt_fire = 100000;
+	int com = 1; // correct for center of mass velocity
 
 	// ACTIVE BROWNIAN PARTICLES
-	int active_yes = 1; // is activity on
-	double f0 = 0.2; // driving force for active brownian particles
-	double tau = 10.;	// persistence time
-	int activity_onset_time = -1; // set to -1 for no activity
+	int active_yes = 1;					// is activity on
+	double f0 = (double)atof(argv[6]);	// driving force for active brownian particles
+	double tau = (double)atof(argv[7]); // persistence time
+	int activity_onset_time = -1;		// set to -1 for no activity
 
 	// JAMMING PARAMETERS
 	double phi_start = 0.4; // starting packing fraction before growth
-	int jamming_yes = 0;	// is this a jamming simulation
-	int flag_inflate = 0;	// should inflation of particles happen
+	box_length = std::sqrt((double)Na * ((double)Nss * (double)Nss * l0 * l0 / (4. * PI * Alf_set) + (PI / 8.) *d0*d0*((double)Nss + 2)) / phi_start);
+	// box_length = 1000.;
+	int jamming_yes = 0;  // is this a jamming simulation
+	int flag_inflate = 0; // should inflation of particles happen
 	// double pressure_crit = 1.0e-3;//current value for jamming algorithm
 	double pressure_crit = 2.0e-2;
 	double KE_thresh = 1.0e-10;
@@ -110,8 +124,8 @@ int main()
 	double dA0inf = 2.0e0;
 	double phi_slow = 0.85;
 	double checking_time = 40000;
-	double max_relaxation_time = 100000;
-	double dphi = 0.02;
+	double max_relaxation_time = 1000;
+	double dphi = 0.0001;
 
 	char Alf_str[200];
 	std::ofstream ofile("./coords.csv"); // Gautham add
@@ -122,10 +136,10 @@ int main()
 	std::system(cmd);
 	sprintf(outfile1, "%s%s/Pos_%05d_ac_%.2f_Ka_%.2f_Kp_%.2f_N_%04d_Kb_%.2f.txt", dongdir, Alf_str, pid, a_cut_c, KAA_a_ratio, Kp, Na, Kb);
 	std::ifstream pfile(outfile1);
-	sprintf(restartfile, "restart_regular_KAA_1.00_KAA_a_0.01_KA_1000.00_Kp_10.00_Kb_0.000_Na_50_t_2000000.txt"); // name of restart file to open
+	sprintf(restartfile, "restart_regular_KAA_1000.00_KAA_a_10.00_KA_100000.00_Kp_1.00_Kb_0.004_Na_50_t_3400999_phi_0.740.txt"); // name of restart file to open
 	std::ifstream rfile(restartfile);
 	vector<double> Alf(Na, 0.0);
-	vector<double> Da(Na, 0.0), L0(Na, 0.0), D0(Na, 0.0),  alpha_0(Nhalf, 0.0), L0i(Nhalf, 0.0);
+	vector<double> Da(Na, 0.0), L0(Na, 0.0), D0(Na, 0.0), alpha_0(Nhalf, 0.0), L0i(Nhalf, 0.0);
 	double A0;
 	vector<int> Ns(Na, 0);
 	vector<int> idx_start(Na, 0), idx_end(Na, 0);
@@ -153,10 +167,11 @@ int main()
 		// D0[na] = delta * D0_c;
 		// L0[na] = D0_c;
 
-		// A0[na] = Nsb * Nsb * D0_c * D0_c / 4.0 / PI / Alf_set / Alf_b;
-		A0 = (1./(1.+PI*PI*delta*delta*Alf_set*(double(Nsb)+2.)/(2.*(double)Nsb*(double)Nsb)))*phi_start * box_length * box_length / (double)Na;
-		//starting with a constant effective packing fraction
-		L0[na] = std::sqrt(4. * PI * A0 * Alf_set) / (double)Nsb;
+		A0 = (double)Nss * (double)Nss * l0 * l0 / (4.0 * PI * Alf_set);
+		// A0 = (1./(1.+PI*PI*delta*delta*Alf_set*(double(Nsb)+2.)/(2.*(double)Nsb*(double)Nsb)))*phi_start * box_length * box_length / (double)Na;
+		// starting with a constant effective packing fraction
+		// L0[na] = std::sqrt(4. * PI * A0 * Alf_set) / (double)Nsb;
+		L0[na] = l0;
 		D0[na] = delta * L0[na];
 		// alpha_0[na] = 2.0 * PI / Nsb;
 		if (na > 0)
@@ -257,46 +272,38 @@ int main()
 			{
 				rfile >> A0;
 			}
-			for (int edg = 0; edg < Nhalf; edg++)
+			for (int na = 0; na < Na; na++)
 			{
-				rfile >> L0i[edg];
+				for (ns = idx_start[na]; ns <= idx_end[na]; ns++){
+
+					rfile >> L0i[ns];
+					
+
+				}
+				L0[na]  = L0i[idx_start[na]];// made this way to allow backwards compatibility for reading restart files. 
+				
+		
 			}
 			for (int na = 0; na < Na; na++)
 			{
 				rfile >> D0[na];
 			}
-			// if (param_override == 0 ){
-			// 	for (int na = 0; na<Na;na++){
-			// 		rfile >> KA[na];
-			// 	}
-			// 	for (int na = 0; na<Na;na++){
-			// 		rfile >> Kp[na];
-			// 	}
-			// }
 
-			// if(bending_added==1){
-			// 	for (int edg=0; edg<Nhalf; edg++){
-			// 		rfile >> Kb_all[edg];
-			// 	}
-
-			// 	for (int edg = 0; edg<Nhalf; edg++){
-			// 		rfile >> alpha_0[edg];
-			// 	}
-			// }
+			rfile >> box_length;
 		}
 
 		// double F = FIRE_DPM_RP_VL(Na, Ns, Nhalf, Ntot, Rb, D0, A0, Da, alpha_0, a_cut_c, Kp, KA, KAA, KAA_a, Kw, idx_start,
 		// 					idx_end, ift, jft, pos, Fthresh, dt_fire, Nt_fire, L0i, Kb, dstep, bending_added,
-		// 					box_length);
+		// 					box_length, bending_type, l0);
 
 		P = Verlet_Int(Na, Ns, Nhalf, Ntot, Rb, D0, A0, Da, alpha_0, a_cut_c,
 					   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
 					   pos, Fthresh, dt_verlet, Nt_verlet, Vel, dstep, restartstep, Ti, B,
-					   inflate_ids, L0i, drag_l, Alf_set, deflation_ids, n_deflate, drag_a, flag_inflate, flag_deflate,
+					   inflate_ids, L0, drag_l, Alf_set, deflation_ids, n_deflate, drag_a, flag_inflate, flag_deflate,
 					   kA0, Kb, kal_A, bending_added, perimeter_plasticity_flag, area_plasticity_flag,
 					   l0min, area_plasticity_all, whole_dp_plasticity, box_length, delta, temperature_on, pressure_crit,
 					   active_yes, f0, tau, theta, activity_onset_time, global_step, phi_crit, KE_thresh, dA0inf,
-					   checking_time, phi_slow, max_relaxation_time, jamming_yes, l0max, dphi, phi_start);
+					   checking_time, phi_slow, max_relaxation_time, jamming_yes, l0max, dphi, phi_start, com, bending_type, l0);
 		return 0;
 	}
 	else
@@ -305,9 +312,9 @@ int main()
 		// ARRANGING PARTICLES ON A RECTANGULAR LATTICE
 
 		vector<double> cell_centers(2 * Na, 0.0);
-		double cushion = 5.;
+		double cushion = 10.;
 		double rminimum = std::sqrt(A0 / PI);
-		double min_distance2 = 4. * rminimum * rminimum + 4. * rminimum * delta * D0_c + delta * delta * D0_c * D0_c;
+		double min_distance2 = 4. * rminimum * rminimum + 4. * rminimum * D0[0] + D0[0] * D0[0] + cushion;
 		bool overlap;
 
 		for (int na = 0; na < Na; na++)
@@ -349,17 +356,17 @@ int main()
 	}
 
 	double F = FIRE_DPM_RP_VL(Na, Ns, Nhalf, Ntot, Rb, D0, A0, Da, alpha_0, a_cut_c, Kp, KA, KAA, KAA_a, Kw, idx_start,
-							  idx_end, ift, jft, pos, Fthresh, dt_fire, Nt_fire, L0i, Kb, dstep, bending_added,
-							  box_length);
+							  idx_end, ift, jft, pos, Fthresh, dt_fire, Nt_fire, L0, Kb, dstep, bending_added,
+							  box_length,bending_type, l0);
 
 	P = Verlet_Int(Na, Ns, Nhalf, Ntot, Rb, D0, A0, Da, alpha_0, a_cut_c,
 				   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
 				   pos, Fthresh, dt_verlet, Nt_verlet, Vel, dstep, restartstep, Ti, B,
-				   inflate_ids, L0i, drag_l, Alf_set, deflation_ids, n_deflate, drag_a, flag_inflate, flag_deflate,
+				   inflate_ids, L0, drag_l, Alf_set, deflation_ids, n_deflate, drag_a, flag_inflate, flag_deflate,
 				   kA0, Kb, kal_A, bending_added, perimeter_plasticity_flag, area_plasticity_flag,
 				   l0min, area_plasticity_all, whole_dp_plasticity, box_length, delta, temperature_on, pressure_crit,
 				   active_yes, f0, tau, theta, activity_onset_time, global_step, phi_crit, KE_thresh, dA0inf, checking_time,
-				   phi_slow, max_relaxation_time, jamming_yes, l0max, dphi, phi_start);
+				   phi_slow, max_relaxation_time, jamming_yes, l0max, dphi, phi_start, com, bending_type, l0);
 
 	return 0;
 }
@@ -381,12 +388,12 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				  vector<int> &ift, vector<int> &jft,
 				  vector<double> &pos, double Fthresh, double dt_fire, int Nt_verlet, vector<double> &Vel, int dstep,
 				  int restartstep, double Ti, double B,
-				  vector<int> &inflate_ids, vector<double> &L0i, double drag_l, double Alf_set, vector<int> &deflation_ids,
+				  vector<int> &inflate_ids, vector<double> &L0, double drag_l, double Alf_set, vector<int> &deflation_ids,
 				  int n_deflate, double drag_a, int flag_inflate, int flag_deflate, double kA0, double Kb,
-				  double kal_A, int bending_added, int perimeter_plasticity_flag, int area_plasticity_flag, double l0min, int area_plasticity_all, int whole_dp_plasticity, int box_length, double delta, int temperature_on, double pressure_crit,
+				  double kal_A, int bending_added, int perimeter_plasticity_flag, int area_plasticity_flag, double l0min, int area_plasticity_all, int whole_dp_plasticity, double box_length, double delta, int temperature_on, double pressure_crit,
 				  int active_yes, double f0, double tau, vector<double> &theta, int activity_onset_time, int global_step,
 				  double phi_crit, double KE_thresh, double dA0inf, int checking_time, double phi_slow, int max_relaxation_time,
-				  int jamming_yes, double l0max, double dphi, double phi_start)
+				  int jamming_yes, double l0max, double dphi, double phi_start, int com, int bending_type, double l0)
 {
 	int n, nt = 0;
 	vector<double> Acc(Nall, 0.0);
@@ -402,6 +409,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 	vector<double> Vel_half(Nall, 0.0);
 	vector<double> lk(Nhalf, 0.0);
 	vector<double> A(Na, 0.0);
+	vector<double> Kl(Na, Kp);
 	double r_cut = D0[0];
 	for (n = 1; n < Na; n++)
 		r_cut = (r_cut > D0[n]) ? r_cut : D0[n];
@@ -448,10 +456,10 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 	VerletList(Na, Ns, Nhalf, Nall, Da, r_cut, idx_start, idx_end,
 			   pos, pos_save, VL_aa, VL_counter_all, first_call, box_length);
 
- 	Pw = Force_DPM(Na, Ns, Nhalf, Nall, Rb, D0, A0, Da, a_cut_c,
+	Pw = Force_DPM(Na, Ns, Nhalf, Nall, Rb, D0, A0, Da, a_cut_c,
 				   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
-				   pos, VL_aa, VL_counter_all, Acc, aforces, L0i, lk, A, Kb, nt, dstep, bending_added,
-				   box_length);
+				   pos, VL_aa, VL_counter_all, Acc, aforces, L0, lk, A, Kb, nt, dstep, bending_added,
+				   box_length, bending_type, Kl);
 
 	int out_t = 0;
 
@@ -493,7 +501,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				{
 					int type = (int)(i + Ns[0]) / Ns[0];
 					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
-							D0[type - 1] / 2., Nhalf, A[type - 1], A0, lk[i], L0i[i], alpha_0[i], Kb);
+							D0[type - 1] / 2., Nhalf, A[type - 1], A0, lk[i], L0[type-1], alpha_0[i], Kb, box_length);
 				}
 				logfile = fopen(log, "w");
 				fprintf(logfile, "KAA, KAA_a, a_cut_c, B, KA, Kp, Kb, f0, tau, drag_l, l0min, l0max, dA0inf, phi_slow, checking_time, max_relaxation_time\n");
@@ -511,7 +519,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				{
 					int type = (int)(i + Ns[0]) / Ns[0];
 					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
-							D0[type - 1] / 2., Nhalf, A[type - 1], A0, lk[i], L0i[i], alpha_0[i], Kb);
+							D0[type - 1] / 2., Nhalf, A[type - 1], A0, lk[i], L0[type-1], alpha_0[i], Kb, box_length);
 				}
 			}
 			fclose(coords_file);
@@ -543,7 +551,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 			sprintf(restart_regular, "%s/restart_regular_KAA_%.2f_KAA_a_%.2f_KA_%.2f_Kp_%.2f_Kb_%.3f_Na_%d_t_%d.txt", restart_folder, KAA, KAA_a, KA, Kp, Kb, Na, nt);
 
-			restart_write(restart_regular, Rb, pos, Vel, A0, L0i, KA, Kp, Na, Nall, Nhalf, Kb, D0);
+			restart_write(restart_regular, Rb, pos, Vel, A0, L0, KA, Kp, Na, Nall, Nhalf, Kb, D0, box_length);
 		}
 
 		if (jamming_yes)
@@ -567,15 +575,15 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				press -= 0.5 * pos[n] * aforces[n] / (box_length * box_length);
 			}
 
-			if ((KE < KE_thresh) && (press < pressure_crit))
-			{
-				flag_inflate = 1;
-				time_stationary = 0;
-			}
-			else
-			{
-				flag_inflate = 0;
-			}
+			// if ((KE < KE_thresh) && (press < pressure_crit))
+			// {
+			// 	flag_inflate = 1;
+			// 	time_stationary = 0;
+			// }
+			// else
+			// {
+			// 	flag_inflate = 0;
+			// }
 
 			if (flag_inflate == 0)
 			{
@@ -590,27 +598,29 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 		if (flag_inflate == 1)
 		{
-			sprintf(restart_regular, "%s/restart_regular_KAA_%.2f_KAA_a_%.2f_KA_%.2f_Kp_%.2f_Kb_%.3f_Na_%d_t_%d.txt", restart_folder, KAA, KAA_a, KA, Kp, Kb, Na, nt);
-			restart_write(restart_regular, Rb, pos, Vel, A0, L0i, KA, Kp, Na, Nall, Nhalf, Kb, D0);
+			sprintf(restart_regular, "%s/restart_regular_KAA_%.2f_KAA_a_%.2f_KA_%.2f_Kp_%.2f_Kb_%.3f_Na_%d_t_%d_phi_%.3f.txt", restart_folder, KAA,
+					KAA_a, KA, Kp, Kb, Na, nt, phi_curr);
+			restart_write(restart_regular, Rb, pos, Vel, A0, L0, KA, Kp, Na, Nall, Nhalf, Kb, D0, box_length);
 			phi_curr += dphi;
 
-			for (int na = 0; na < Na; na++)
-			{
-				double Nsb = (double)Ns[na];
-				A0 = (1./(1.+PI*PI*delta*delta*Alf_set*(double(Nsb)+2.)/(2.*(double)Nsb*(double)Nsb)))*phi_curr * box_length * box_length / (double)Na;
+			double l0 = L0[0]; //only makes sense for jamming simulations where all L0s are the same
+			double nvertex = Ns[0]; // assuming all dps have same no. of vertices.
+			double d0 = delta*l0;
 
-				//A0[na] += dA0inf;
-				double perimeter = std::sqrt(4. * PI * Alf_set * A0);
-				double nvertex = (double)Ns[na];
+			// A0 = (1./(1.+PI*PI*delta*delta*Alf_set*(double(Nsb)+2.)/(2.*(double)Nsb*(double)Nsb)))*phi_curr * box_length * box_length / (double)Na;
+			box_length = std::sqrt((double)Na * (nvertex * nvertex * l0 * l0 / (4. * PI * Alf_set) + (PI / 8.) * d0*d0*(nvertex + 2)) / phi_curr);
+			first_call = 1; // rebuild verlet list if box becomes smaller.
 
-				double l0curr = perimeter / nvertex;
-				for (int ns = idx_start[na]; ns <= idx_end[na]; ns++)
-				{
-					L0i[ns] = l0curr;
-				}
+			// A0[na] += dA0inf;
+			// double perimeter = std::sqrt(4. * PI * Alf_set * A0);
 
-				D0[na] = l0curr * delta;
-			}
+			// double l0curr = perimeter / nvertex;
+			// for (int ns = idx_start[na]; ns <= idx_end[na]; ns++)
+			// {
+			// 	L0i[ns] = l0curr;
+			// }
+
+			// D0[na] = l0curr * delta;
 
 			time_elapsed += 1;
 		}
@@ -645,7 +655,6 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				phi += A0 + 0.125 * (Ns[na] + 2.) * PI * D0[na] * D0[na];
 			}
 			phi /= (box_length * box_length);
-			
 
 			for (int n = 0; n < Nall; n++)
 			{
@@ -661,27 +670,27 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 		int particle_id = 0;
 
-		if (temperature_on)
-		{
+		// if (temperature_on)
+		// {
 
-			for (int n = 0; n < Nhalf; n++)
-			{
+		// 	for (int n = 0; n < Nhalf; n++)
+		// 	{
 
-				if (n % Ns[0] == 0)
-				{ /// asuming all dps have same no. of vertices
+		// 		if (n % Ns[0] == 0)
+		// 		{ /// asuming all dps have same no. of vertices
 
-					eta1 = distribution(generator);
-					eta2 = distribution(generator);
-					xi1 = distribution(generator);
-					xi2 = distribution(generator);
-				}
+		// 			eta1 = distribution(generator);
+		// 			eta2 = distribution(generator);
+		// 			xi1 = distribution(generator);
+		// 			xi2 = distribution(generator);
+		// 		}
 
-				xi[n] = xi1;
-				xi[n + Nhalf] = xi2;
-				eta[n] = eta1;
-				eta[n + Nhalf] = eta2;
-			}
-		}
+		// 		xi[n] = xi1;
+		// 		xi[n + Nhalf] = xi2;
+		// 		eta[n] = eta1;
+		// 		eta[n + Nhalf] = eta2;
+		// 	}
+		// }
 
 		for (int n = 0; n < Nall; n++)
 		{
@@ -703,7 +712,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				for (int lid = start; lid <= end; lid++)
 				{
 
-					deltal0 = -(Kp / drag_l) * (L0i[lid] - lk[lid]) * dt;
+					deltal0 = -(Kp / drag_l) * (L0[na] - lk[lid]) * dt;
 
 					// if(deltal0<0.){
 					// 	if(L0i[lid]>l0min){
@@ -733,28 +742,21 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 					for (int lid = start; lid <= end; lid++)
 					{
 
-						deltal0 = -(Kp / drag_l) * (L0i[lid] - lk[lid]) * dt;
+						deltal0 = (Kp / drag_l) * (lk[lid]-L0[na]) * dt;
 
-						int startb = idx_start[na];
-						int endb = idx_end[na];
-						for (int ljd = startb; ljd <= endb; ljd++)
-						{
+						L0[na] += deltal0 / Ns[na]; 
 
-							L0i[ljd] += deltal0 / Ns[na]; // always allow the perimeter to get shorter
-						}
-
-						D0[na] += deltal0 / Ns[na];
+						//D0[na] += deltal0 / Ns[na];
 					}
+					Kl[na] = L0[na]*L0[na]*Kp;
 				}
 			}
 		}
 
-		
-
 		Pw = Force_DPM(Na, Ns, Nhalf, Nall, Rb, D0, A0, Da, a_cut_c,
 					   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
-					   pos, VL_aa, VL_counter_all, Acc, aforces, L0i, lk, A, Kb, nt, dstep, bending_added,
-					   box_length);
+					   pos, VL_aa, VL_counter_all, Acc, aforces, L0, lk, A, Kb, nt, dstep, bending_added,
+					   box_length, bending_type, Kl);
 
 		if (active_yes)
 		{
@@ -767,6 +769,7 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 					Acc[ns] += f0 * std::cos(theta[na]);
 					Acc[ns + Nhalf] += f0 * std::sin(theta[na]);
+
 				}
 				G = distribution(generator);
 				theta[na] += std::sqrt(2. * dt / tau) * G;
@@ -775,10 +778,30 @@ double Verlet_Int(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 		VerletList(Na, Ns, Nhalf, Nall, Da, r_cut, idx_start, idx_end,
 				   pos, pos_save, VL_aa, VL_counter_all, first_call, box_length);
+		first_call = 0;
 
 		for (int n = 0; n < Nall; n++)
 		{
 			Vel[n] = Vel_half[n] + 0.5 * dt * Acc[n] - 0.5 * dt * B * Vel_half[n] + 0.5 * dt_root * sigma * xi[n] - (1. / 8.) * dt * dt * B * (Acc[n] - B * Vel_half[n]) - 0.25 * dt * dt_root * B * sigma * (0.5 * xi[n] + (1. / root_3) * eta[n]);
+		}
+
+		if (com)
+		{
+			// correct for center of mass velocity
+			double com_vel_x = 0.;
+			double com_vel_y = 0.;
+			for (int n = 0; n < Nhalf; n++)
+			{
+				com_vel_x += Vel[n];
+				com_vel_y += Vel[n + Nhalf];
+			}
+			com_vel_x /= (double)Nhalf;
+			com_vel_y /= (double)Nhalf;
+			for (int n = 0; n < Nall; n++)
+			{
+				Vel[n] -= com_vel_x;
+				Vel[n + Nhalf] -= com_vel_y;
+			}
 		}
 	}
 
@@ -795,8 +818,8 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				 vector<int> &ift, vector<int> &jft,
 				 vector<double> &pos, vector<vector<int>> &VL_aa,
 				 vector<int> &VL_counter, vector<double> &F_a, vector<double> &aforces,
-				 vector<double> &L0i, vector<double> &lk, vector<double> &A, double Kb, int nt,
-				 int dstep, int bending_added, double box_length)
+				 vector<double> &L0, vector<double> &lk, vector<double> &A, double Kb, int nt,
+				 int dstep, int bending_added, double box_length, int bending_type, vector<double> &Kl)
 {
 	int ns, ns_y, ms, na, ma;
 	double lxi, lyi, lki, dli, dlj, deltal;
@@ -859,20 +882,19 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 	{
 		Ns_a = double(Ns[na]);
 		// L0_a = L0[na];
-
+		double spring_const = Kl[na];
 		for (ns = idx_start[na]; ns <= idx_end[na]; ns++)
 		{
 
 			jfts = jft[ns];
-			double L0r = L0i[jfts];
-			double L0l = L0i[ns];
+			double L0r = L0[na];
+			double L0l = L0[na];
 			dlj = (L0r / lk[jfts] - 1.0) / (L0r * L0r);
 			dli = (1.0 - L0l / lk[ns]) / (L0l * L0l);
 			deltal = (1.0 - lk[ns] / L0l);
 			Eval += 0.5 * Kp * deltal * deltal / Ns_a;
-			F_a[ns] += Kp / Ns_a * (dlj * lx[jfts] + dli * lx[ns]);
-			F_a[ns + Nhalf] += Kp / Ns_a * (dlj * ly[jfts] + dli * ly[ns]);
-
+			F_a[ns] += spring_const / Ns_a * (dlj * lx[jfts] + dli * lx[ns]);
+			F_a[ns + Nhalf] += spring_const / Ns_a * (dlj * ly[jfts] + dli * ly[ns]);
 		}
 	}
 
@@ -890,6 +912,7 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 			ifts = ift[ns];
 			jfts = jft[ns];
 			dxx = xa[ns] - xa[ifts];
+			dyy = ya[ns] - ya[ifts];
 			xcurr = xa[ns];
 			xcurri = xa[ifts];
 			ycurr = ya[ns];
@@ -933,18 +956,64 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 	}
 	if (bending_added)
 	{
-		for (na = 0; na < Na; na++)
+		if (bending_type == 1)
 		{
 
-			for (ns = idx_start[na]; ns <= idx_end[na]; ns++)
+			for (na = 0; na < Na; na++)
 			{
-				l0curr = L0i[ns];
-				ifts = ift[ns];
-				ifts_next = ift[ifts];
-				jfts = jft[ns];
-				jfts_next = jft[jfts];
-				F_a[ns] -= Kb * (-4. * (xa[ifts] + xa[jfts]) + 6. * xa[ns] + xa[ifts_next] + xa[jfts_next]) / (l0curr * l0curr * l0curr * l0curr);
-				F_a[ns + Nhalf] -= Kb * (-4. * (ya[ifts] + ya[jfts]) + 6. * ya[ns] + ya[ifts_next] + ya[jfts_next]) / (l0curr * l0curr * l0curr * l0curr);
+
+				for (ns = idx_start[na]; ns <= idx_end[na]; ns++)
+				{
+					l0curr = L0[na];
+					ifts = ift[ns];
+					ifts_next = ift[ifts];
+					jfts = jft[ns];
+					jfts_next = jft[jfts];
+					F_a[ns] -= Kb * (-4. * (xa[ifts] + xa[jfts]) + 6. * xa[ns] + xa[ifts_next] + xa[jfts_next]) / (l0curr * l0curr * l0curr * l0curr);
+					F_a[ns + Nhalf] -= Kb * (-4. * (ya[ifts] + ya[jfts]) + 6. * ya[ns] + ya[ifts_next] + ya[jfts_next]) / (l0curr * l0curr * l0curr * l0curr);
+				}
+			}
+		}
+		else
+		{
+			vector<double> theta(Nhalf, 0.0);
+			vector<double> d_alpha(Nhalf, 0.0);
+			vector<double> cos_theta(Nhalf, 0.0);
+			vector<double> sin_theta(Nhalf, 0.0);
+			vector<double> alpha(Nhalf, 0.0);
+			double alphai, d_alpha_i, d_alpha_j, Kb_s, alphai0;
+			for (ns = 0; ns < Nhalf; ns++)
+			{
+				theta[ns] = std::atan2(ly[ns], lx[ns]);
+				cos_theta[ns] = lx[ns] / lk_sq[ns];
+				sin_theta[ns] = ly[ns] / lk_sq[ns];
+			}
+
+			for (na = 0; na < Na; na++)
+			{
+
+				for (ns = idx_start[na]; ns <= idx_end[na]; ns++)
+				{
+					alphai = theta[ns] - theta[jft[ns]];
+					alpha[ns] = alphai - std::round(alphai / 2.0 / PI) * 2.0 * PI;
+					d_alpha[ns] = alphai - std::round(alphai / 2.0 / PI) * 2.0 * PI;
+				}
+			}
+
+			for (na = 0; na < Na; na++)
+			{
+
+				for (ns = idx_start[na]; ns <= idx_end[na]; ns++)
+				{
+					Kb_s = ((double)Ns[na] / 20.0) * ((double)Ns[na] / 20.0) * Kb;
+					// printf("ns: %d  Kb: %.5e\n", ns, Kb_s);
+					ifts = ift[ns];
+					jfts = jft[ns];
+					d_alpha_i = d_alpha[ns] - d_alpha[ifts];
+					d_alpha_j = d_alpha[ns] - d_alpha[jfts];
+					F_a[ns] -= Kb_s * (d_alpha_i * sin_theta[ns] + d_alpha_j * sin_theta[jfts]);
+					F_a[ns + Nhalf] += Kb_s * (d_alpha_i * cos_theta[ns] + d_alpha_j * cos_theta[jfts]);
+				}
 			}
 		}
 	}
@@ -1018,15 +1087,18 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 	double Dnm2;
 	for (na = 0; na < Na; na++)
 	{
+		int ignore_number = 5;
 		int start = idx_start[na];
-		Dnm = L0i[start]; // doesn't really matter so long as there is some exclusion principle
-		// Dnm = D0[na];
+		//Dnm = l0; // doesn't really matter so long as there is some exclusion principle
+		Dnm = D0[na];
 		Dnm_sq = Dnm * Dnm;
-		for (ns = idx_start[na]; ns < idx_end[na] - 1; ns++)
+		for (ns = idx_start[na]; ns < idx_end[na] - ignore_number; ns++)
 		{
-			for (ms = ns + 2; ms <= idx_end[na]; ms++)
+			for (ms = ns + ignore_number+1; ms <= idx_end[na]; ms++)
 			{
-				if ((ns == idx_start[na]) && (ms == idx_end[na]))
+				int difference = ms-ns;
+				int distance = Ns[na] - difference;
+				if (distance<=ignore_number)
 				{
 					continue;
 				}
@@ -1055,7 +1127,6 @@ double Force_DPM(int Na, vector<int> &Ns, int Nhalf, int Nall,
 			}
 		}
 	}
-
 
 	return Eval;
 }
@@ -1210,8 +1281,8 @@ void VerletList(int Na, vector<int> &Ns, int Nhalf, int Nall,
 		pos_save[i] = pos_a[i];
 }
 
-void restart_write(char file_name[200], double Rb, vector<double> &pos, vector<double> &Vel, double A0, vector<double> &L0i,
-				   double KA, double Kp, int Na, int Nall, int Nhalf, double Kb, vector<double> &D0)
+void restart_write(char file_name[200], double Rb, vector<double> &pos, vector<double> &Vel, double A0, vector<double> &L0,
+				   double KA, double Kp, int Na, int Nall, int Nhalf, double Kb, vector<double> &D0, double box_length)
 {
 	// this function writes simulation configurations when needed to resume a simulation later.
 	FILE *restart_file;
@@ -1231,23 +1302,18 @@ void restart_write(char file_name[200], double Rb, vector<double> &pos, vector<d
 		fprintf(restart_file, "%.32e\n", A0);
 	}
 	for (int edg = 0; edg < Nhalf; edg++)
+
 	{
-		fprintf(restart_file, "%.32e\n", L0i[edg]);
+		int nvertices = Nhalf/Na;
+		int type = (int)(edg + nvertices) / nvertices;
+		fprintf(restart_file, "%.32e\n", L0[type-1]);
 	}
 	for (int na = 0; na < Na; na++)
 	{
 		fprintf(restart_file, "%.32e\n", D0[na]);
 	}
-	for (int na = 0; na < Na; na++)
-	{
-		fprintf(restart_file, "%.32e\n", KA);
-	}
-	for (int na = 0; na < Na; na++)
-	{
-		fprintf(restart_file, "%.32e\n", Kp);
-	}
 
-	fprintf(restart_file, "%.32e\n", Kb);
+	fprintf(restart_file, "%.32e\n", box_length);
 
 	fclose(restart_file);
 }
@@ -1259,12 +1325,13 @@ double FIRE_DPM_RP_VL(int Na, vector<int> &Ns, int Nhalf, int Nall,
 					  vector<int> &idx_start, vector<int> &idx_end,
 					  vector<int> &ift, vector<int> &jft,
 					  vector<double> &pos, double Fthresh, double dt_fire, int Nt_fire,
-					  vector<double> &L0i, double Kb,
-					  int dstep, int bending_added, double box_length)
+					  vector<double> &L0, double Kb,
+					  int dstep, int bending_added, double box_length, int bending_type, double l0)
 {
 	int n, nt = 0;
 	vector<double> Acc(Nall, 0.0);
 	vector<double> Vel(Nall, 0.0);
+	vector<double> Kl(Na, Kp);
 	double P, Vel_norm, Acc_norm, Acc_max, Acc_abs;
 	// FIRE parameters
 	int N_delay = 20;
@@ -1358,8 +1425,8 @@ double FIRE_DPM_RP_VL(int Na, vector<int> &Ns, int Nhalf, int Nall,
 			   pos, pos_save, VL_aa, VL_counter_all, first_call, box_length);
 	Pw = Force_DPM(Na, Ns, Nhalf, Nall, Rb, D0, A0, Da, a_cut_c,
 				   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
-				   pos, VL_aa, VL_counter_all, Acc, aforces, L0i, lk, A, Kb, nt, dstep, bending_added,
-				   box_length);
+				   pos, VL_aa, VL_counter_all, Acc, aforces, L0, lk, A, Kb, nt, dstep, bending_added,
+				   box_length, bending_type, Kl);
 	/*
 	Eval = Energy_DPM(Na, Ns, Nhalf, Nall, Lx, Ly, L0, D0, A0, Da,
 						Kp, KA, KC, Kb, KAC, KCC, idx_start, idx_end,
@@ -1440,8 +1507,8 @@ double FIRE_DPM_RP_VL(int Na, vector<int> &Ns, int Nhalf, int Nall,
 
 		Pw = Force_DPM(Na, Ns, Nhalf, Nall, Rb, D0, A0, Da, a_cut_c,
 					   Kp, KA, KAA, KAA_a, Kw, idx_start, idx_end, ift, jft,
-					   pos, VL_aa, VL_counter_all, Acc, aforces, L0i, lk, A, Kb, nt, dstep, bending_added,
-					   box_length);
+					   pos, VL_aa, VL_counter_all, Acc, aforces, L0, lk, A, Kb, nt, dstep, bending_added,
+					   box_length, bending_type, Kl);
 		/*
 		Eval = Energy_DPM(Na, Ns, Nhalf, Nall, Lx, Ly, L0, D0, A0, Da,
 						Kp, KA, KC, Kb, KAC, KCC, idx_start, idx_end,
@@ -1469,8 +1536,8 @@ double FIRE_DPM_RP_VL(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				for (int i = 0; i < Nhalf; i++)
 				{
 					int type = (int)(i + Ns[0]) / Ns[0];
-					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
-							D0[0] / 2., Nhalf, A[type - 1], A0, lk[i], L0i[i], alpha[i], alpha_0[i], Kb);
+					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
+							D0[0] / 2., Nhalf, A[type - 1], A0, lk[i], L0[type-1], alpha[i], alpha_0[i], Kb, box_length);
 				}
 			}
 
@@ -1481,8 +1548,8 @@ double FIRE_DPM_RP_VL(int Na, vector<int> &Ns, int Nhalf, int Nall,
 				for (int i = 0; i < Nhalf; i++)
 				{
 					int type = (int)(i + Ns[0]) / Ns[0];
-					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
-							D0[0] / 2., Nhalf, A[type - 1], A0, lk[i], L0i[i], alpha[i], alpha_0[i], Kb);
+					fprintf(coords_file, "%d, %d, %d, %f, %f, %f, %f, %d, %f, %f, %f, %f, %f, %f, %f, %f\n", nt, i + 1, type, pos[i], pos[i + Nhalf], 0.,
+							D0[0] / 2., Nhalf, A[type - 1], A0, lk[i], L0[type-1], alpha[i], alpha_0[i], Kb, box_length);
 				}
 			}
 			fclose(coords_file);
