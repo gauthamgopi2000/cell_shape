@@ -26,3 +26,16 @@ $\tau$ = persistence time for active brownian force
 $\tau_p$ = perimeter adaptation timescale
 
 The simulation is initalized with a packing of deformable particles at $\mathcal{A}_0=1.7$.
+
+For some starting simulation parameters, you may use the following:
+$\epsilon_a=10000$ 
+$\epsilon_b=0.001$
+$\epsilon_l=1$
+$\beta=0.4$
+$Nt=100000000$
+$f_0=0.0009$
+$\tau=500$
+$\tau_p=1000$
+
+
+The simulation will output a file with vertex coordinates called "coords.csv." You may copy this file to the folder "matlab_analysis_files" and run "readcsv.m." This will create a file whose name starts with "dump...." that can be read by the freely available OVITO software for visualizing the simulation. 
