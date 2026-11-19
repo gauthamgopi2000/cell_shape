@@ -38,4 +38,4 @@ $\tau=500$
 $\tau_p=1000$
 
 
-The simulation will output a file with vertex coordinates called "coords.csv." You may copy this file to the folder "matlab_analysis_files" and run "readcsv.m." This will create a file whose name starts with "dump...." that can be read by the freely available OVITO software for visualizing the simulation. 
+The simulation will output  files called "coords.csv" and "log.csv". You may copy these files to the folder "matlab_analysis_files" and run "readcsv.m." This will create a file whose name starts with "dump...." that can be read by the freely available OVITO software for visualizing the simulation. 
